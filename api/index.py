@@ -1,10 +1,16 @@
+import io
+import json
 import os
+import re
 import time
+import zipfile
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import parse_qs, urlparse
 
 import requests
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 
 app = Flask(__name__)
 
@@ -22,6 +28,11 @@ REGISTRY_TABLE_ID = os.getenv("REGISTRY_TABLE_ID", "tblg8QBggPlVm0kV")
 REGISTRY_WIKI_FIELD = "wiki_token"
 REGISTRY_LAST_PUSH_FIELD = "最近推送时间"
 REGISTRY_PUSH_COUNT_FIELD = "累计推送次数"
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SKILL_TEMPLATE_DIR = PROJECT_ROOT / "skill_template"
+BUILD_MIDDLE_API_URL = "https://doubao-daily-push-api.vercel.app"
+BUILD_MIDDLE_API_KEY = "doubao_daily_push"
 
 _token_cache: Dict[str, Any] = {"token": None, "expire_at": 0}
 _base_token_cache: Dict[str, Any] = {}
@@ -257,6 +268,60 @@ def update_registration_push_stats(wiki_token: str) -> bool:
 @app.get("/health")
 def health():
     return jsonify({"ok": True})
+
+
+def parse_bitable_url(url: str) -> Tuple[str, str]:
+    parsed = urlparse(url.strip())
+    match = re.search(r"/wiki/([^/?#]+)", parsed.path)
+    wiki_token = match.group(1) if match else ""
+    query = parse_qs(parsed.query)
+    table_id = (query.get("table") or query.get("table_id") or [""])[0]
+    return wiki_token, table_id
+
+
+def build_skill_zip(wiki_token: str, table_id: str) -> io.BytesIO:
+    required_files = [
+        "SKILL.md",
+        "scripts/generate_daily_push.py",
+        "scripts/open_popup.py",
+    ]
+    buffer = io.BytesIO()
+    config = {
+        "wiki_token": wiki_token,
+        "table_id": table_id,
+        "middle_api_url": BUILD_MIDDLE_API_URL,
+        "middle_api_key": BUILD_MIDDLE_API_KEY,
+    }
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for rel_path in required_files:
+            source = SKILL_TEMPLATE_DIR / rel_path
+            if not source.is_file():
+                raise RuntimeError(f"missing skill template file: {rel_path}")
+            archive.write(source, rel_path)
+        archive.writestr("assets/default_config.json", json.dumps(config, ensure_ascii=False, indent=2) + "\n")
+    buffer.seek(0)
+    return buffer
+
+
+@app.post("/build")
+def build():
+    auth_error = require_api_key()
+    if auth_error:
+        return auth_error
+    payload = request.get_json(silent=True) or {}
+    bitable_url = str(payload.get("bitable_url", "")).strip()
+    wiki_token, table_id = parse_bitable_url(bitable_url)
+    if not wiki_token or not table_id:
+        return jsonify({"error": "invalid_bitable_url"}), 400
+    try:
+        return send_file(
+            build_skill_zip(wiki_token, table_id),
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name="doubao-daily-push.zip",
+        )
+    except Exception as exc:
+        return jsonify({"error": "internal_error", "message": str(exc)}), 500
 
 
 @app.post("/register")
