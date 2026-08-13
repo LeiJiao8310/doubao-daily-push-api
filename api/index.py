@@ -362,9 +362,11 @@ def records():
         all_records = list_records(base_token, table_id)
         items = filter_records(all_records, date=date, tenant_key=tenant_key)
         stats_updated = False
+        stats_error = None
         try:
             stats_updated = update_registration_push_stats(wiki_token)
         except Exception as exc:
+            stats_error = str(exc)
             app.logger.warning("failed to update registry stats for wiki_token=%s: %s", wiki_token, exc)
         return jsonify({
             "date": date,
@@ -374,6 +376,7 @@ def records():
             "count": len(items),
             "records": items,
             "registry_stats_updated": stats_updated,
+            "registry_stats_error": stats_error,
         })
     except Exception as exc:
         return jsonify({"error": "internal_error", "message": str(exc)}), 500
