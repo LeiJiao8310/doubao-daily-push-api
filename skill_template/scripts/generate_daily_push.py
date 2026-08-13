@@ -283,18 +283,18 @@ def extract_category(cat_val):
     return str(cat_val)
 
 
-# 分类颜色映射
-CATEGORY_COLORS = {
-    "客户Q&A": "#FF8800",
-    "竞品对比": "#7B61FF",
-    "Demo案例": "#3370FF",
-    "定价权益": "#F54A45",
-    "流程权限": "#FAAD14",
-    "安全合规": "#E8446A",
-    "打单心得": "#34C759",
-    "其他": "#8F959E",
-    "GTM弹药": "#00B2FF",
-    "相关会议": "#2ECFCF",
+# 分类主题映射：按内容语义使用低饱和蓝、绿、暖橙三组填充色
+CATEGORY_THEMES = {
+    "Demo案例": "blue",
+    "竞品对比": "blue",
+    "GTM弹药": "blue",
+    "打单心得": "green",
+    "安全合规": "green",
+    "流程权限": "green",
+    "客户Q&A": "amber",
+    "定价权益": "amber",
+    "相关会议": "amber",
+    "其他": "blue",
 }
 
 
@@ -308,40 +308,34 @@ def escape_html(text):
 
 
 def build_card_block(fields, is_last):
-    """构建单个卡片内容块 HTML"""
+    """构建单个彩色内容卡片 HTML。"""
     name = escape_html(extract_text(fields.get(FIELD_NAME, "")))
-    intro = escape_html(extract_text(fields.get(FIELD_INTRO, "")))
-    link = extract_link_url(fields.get(FIELD_LINK))
+    intro_raw = extract_text(fields.get(FIELD_INTRO, ""))
+    intro = escape_html(intro_raw)
+    link = escape_html(extract_link_url(fields.get(FIELD_LINK)))
     category = extract_category(fields.get(FIELD_CATEGORY, ""))
-    color = CATEGORY_COLORS.get(category, "#3370FF")
+    theme = CATEGORY_THEMES.get(category, "blue")
+    read_minutes = max(1, min(9, round(max(1, _weighted_text_len(intro_raw)) / 80)))
 
     tag_html = ""
     if category:
-        tag_html = (
-            '<span class="tag" style="background:' + color + '1A;color:' + color + '">'
-            + escape_html(category) + '</span>'
-        )
+        tag_html = '<span class="tag">' + escape_html(category) + '</span>'
 
-    block = (
-        '            <div class="card-block">\n'
-        '              <div class="card-block-header">\n'
+    return (
+        '            <article class="item item-' + theme + '">\n'
+        '              <div class="item-top">\n'
         '                ' + tag_html + '\n'
-        '                <h3 class="block-title">' + name + '</h3>\n'
+        '                <h2 class="item-title">' + name + '</h2>\n'
         '              </div>\n'
-        '              <p class="block-desc">' + intro + '</p>\n'
-        '              <a href="' + link + '" target="_blank" class="btn-primary">\n'
-        '                <span>查看详情</span>\n'
-        '                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">\n'
-        '                  <path d="M4.5 2.5L8.5 6L4.5 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>\n'
-        '                </svg>\n'
-        '              </a>\n'
-        '            </div>\n'
+        '              <p class="item-desc">' + intro + '</p>\n'
+        '              <div class="item-footer">\n'
+        '                <span class="read-time">约 ' + str(read_minutes) + ' 分钟</span>\n'
+        '                <a href="' + link + '" target="_blank" rel="noopener noreferrer" class="btn">\n'
+        '                  <span>查看详情</span><span aria-hidden="true">›</span>\n'
+        '                </a>\n'
+        '              </div>\n'
+        '            </article>\n'
     )
-
-    if not is_last:
-        block += '            <div class="divider"></div>\n'
-
-    return block
 
 
 def _weighted_text_len(text: str) -> float:
@@ -524,9 +518,9 @@ def generate_html(records, today_str):
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-            background: #F0F1F3;
+            background: #EEF3F8;
+            color: #243042;
             padding: 12px;
-            /* 防御性：即使窗口意外被打开成超宽，也保持卡片居中且不拉伸 */
             display: flex;
             justify-content: center;
             align-items: flex-start;
@@ -534,107 +528,140 @@ def generate_html(records, today_str):
         .card-container {
             width: 420px;
             max-width: 420px;
-            background: #FFFFFF;
+            background: #F8FAFC;
+            border: 1px solid rgba(64, 84, 112, 0.08);
             border-radius: 8px;
-            box-shadow: 0 2px 12px rgba(31, 35, 41, 0.06);
+            box-shadow: 0 8px 28px rgba(36, 48, 66, 0.10);
             overflow: hidden;
         }
         .card-header {
-            background: linear-gradient(135deg, #3370FF 0%, #2B5CE6 100%);
-            padding: 24px 24px 20px;
+            background: linear-gradient(135deg, #316BD6 0%, #2454B7 100%);
+            color: #FFFFFF;
+            padding: 22px 22px 18px;
             position: relative;
             overflow: hidden;
         }
         .card-header::before {
             content: '';
             position: absolute;
-            top: -30px;
-            right: -30px;
-            width: 120px;
-            height: 120px;
-            background: rgba(255,255,255,0.08);
+            width: 124px;
+            height: 124px;
+            right: -42px;
+            top: -54px;
             border-radius: 50%;
+            background: rgba(255,255,255,0.12);
         }
         .card-header::after {
             content: '';
             position: absolute;
-            bottom: -20px;
-            left: 40%;
-            width: 80px;
-            height: 80px;
-            background: rgba(255,255,255,0.05);
+            width: 76px;
+            height: 76px;
+            right: 62px;
+            bottom: -50px;
+            border: 14px solid rgba(255,255,255,0.07);
             border-radius: 50%;
         }
-        .card-title {
-            font-size: 18px;
+        .eyebrow {
+            position: relative;
+            z-index: 1;
+            margin-bottom: 6px;
+            font-size: 11px;
             font-weight: 600;
+            letter-spacing: 1.4px;
+            opacity: 0.78;
+        }
+        .card-title {
+            position: relative;
+            z-index: 1;
+            font-size: 18px;
+            font-weight: 700;
             color: #FFFFFF;
             line-height: 1.4;
-            position: relative;
-            z-index: 1;
         }
         .card-subtitle {
-            font-size: 13px;
-            color: rgba(255,255,255,0.75);
-            margin-top: 6px;
             position: relative;
             z-index: 1;
+            margin-top: 5px;
+            font-size: 12px;
+            color: rgba(255,255,255,0.78);
         }
         .card-body {
-            padding: 20px 24px 24px;
+            display: grid;
+            gap: 10px;
+            padding: 14px;
         }
-        .card-block {
-            padding: 16px 0;
+        .item {
+            position: relative;
+            overflow: hidden;
+            padding: 14px 14px 13px 17px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: var(--fill);
+            box-shadow: 0 3px 12px rgba(38,56,80,0.06);
+            transition: transform 0.18s ease-out, box-shadow 0.18s ease-out;
         }
-        .card-block-header {
+        .item::before {
+            content: '';
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 4px;
+            background: var(--accent);
+        }
+        .item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 7px 18px rgba(38,56,80,0.11);
+        }
+        .item-blue { --fill:#EDF5FF; --line:#D4E6FB; --accent:#3478D4; --tag-bg:#D8EAFE; --tag-text:#225DA8; --button:#2F70C7; --button-hover:#255DA7; }
+        .item-green { --fill:#EEF8F2; --line:#D4EADC; --accent:#3A9562; --tag-bg:#D9EFE1; --tag-text:#276C45; --button:#318154; --button-hover:#286A45; }
+        .item-amber { --fill:#FFF7E9; --line:#F1E0BF; --accent:#C98226; --tag-bg:#F8E6C7; --tag-text:#855414; --button:#B87320; --button-hover:#965C19; }
+        .item-top {
             display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 8px;
-            flex-wrap: wrap;
+            align-items: flex-start;
+            gap: 9px;
         }
         .tag {
-            font-size: 11px;
-            font-weight: 500;
-            padding: 2px 8px;
+            flex: 0 0 auto;
+            margin-top: 1px;
+            padding: 3px 7px;
             border-radius: 4px;
-            white-space: nowrap;
-            flex-shrink: 0;
+            background: var(--tag-bg);
+            color: var(--tag-text);
+            font-size: 11px;
+            font-weight: 650;
+            line-height: 1.3;
         }
-        .block-title {
+        .item-title {
             font-size: 15px;
-            font-weight: 600;
-            color: #1F2329;
-            line-height: 1.5;
+            font-weight: 700;
+            line-height: 1.45;
+            color: #202C3D;
         }
-        .block-desc {
-            font-size: 14px;
-            color: #646A73;
-            line-height: 1.7;
-            margin-bottom: 12px;
+        .item-desc {
+            margin: 8px 0 11px;
+            font-size: 13px;
+            line-height: 1.65;
+            color: #566477;
         }
-        .btn-primary {
+        .item-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .read-time { font-size: 11px; color: #7A8797; }
+        .btn {
             display: inline-flex;
             align-items: center;
             gap: 4px;
-            padding: 8px 16px;
-            background: #3370FF;
+            padding: 6px 10px;
+            border-radius: 4px;
+            background: var(--button);
             color: #FFFFFF;
-            border-radius: 6px;
-            font-size: 13px;
-            font-weight: 500;
+            font-size: 12px;
+            font-weight: 600;
             text-decoration: none;
-            transition: all 0.2s ease;
+            transition: background 0.18s ease-out, transform 0.18s ease-out;
         }
-        .btn-primary:hover {
-            background: #2B5CE6;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(51, 112, 255, 0.3);
-        }
-        .divider {
-            height: 1px;
-            background: #F0F1F2;
-        }
+        .btn:hover { background: var(--button-hover); transform: translateX(1px); }
         .empty-state {
             text-align: center;
             padding: 48px 24px;
@@ -652,8 +679,9 @@ def generate_html(records, today_str):
 <body>
     <div class="card-container">
         <div class="card-header">
+            <div class="eyebrow">DAILY PICKS</div>
             <div class="card-title">豆包玩儿法推荐每日一更！</div>
-            <div class="card-subtitle">&#128197; {{DATE}}</div>
+            <div class="card-subtitle">&#128197; {{DATE}} · 今日 {{COUNT}} 条精选</div>
         </div>
         <div class="card-body">
 {{CARDS}}
@@ -689,6 +717,7 @@ def generate_html(records, today_str):
     html = (
         html_template
         .replace("{{DATE}}", display_date)
+        .replace("{{COUNT}}", str(len(records)))
         .replace("{{CARDS}}", cards_html)
         .replace("{{CONTENT_WIDTH}}", str(content_width))
         .replace("{{CONTENT_HEIGHT}}", str(content_height))
