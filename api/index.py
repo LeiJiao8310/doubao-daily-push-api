@@ -70,8 +70,14 @@ def lark_post(path: str, body: Dict[str, Any], token: Optional[str] = None) -> D
     if token:
         headers["Authorization"] = f"Bearer {token}"
     resp = requests.post(f"{LARK_OPEN_API}{path}", json=body, headers=headers, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError:
+        data = {"raw_response": resp.text[:1000]}
+    if not resp.ok:
+        raise RuntimeError(
+            f"Lark API HTTP error path={path}, status={resp.status_code}, response={data}"
+        )
     if data.get("code", 0) != 0:
         raise RuntimeError(f"Lark API error path={path}, code={data.get('code')}, msg={data.get('msg')}")
     return data
