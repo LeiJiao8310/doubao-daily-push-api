@@ -283,19 +283,8 @@ def extract_category(cat_val):
     return str(cat_val)
 
 
-# 分类主题映射：按内容语义使用低饱和蓝、绿、暖橙三组填充色
-CATEGORY_THEMES = {
-    "Demo案例": "blue",
-    "竞品对比": "blue",
-    "GTM弹药": "blue",
-    "打单心得": "green",
-    "安全合规": "green",
-    "流程权限": "green",
-    "客户Q&A": "amber",
-    "定价权益": "amber",
-    "相关会议": "amber",
-    "其他": "blue",
-}
+# 相邻卡片按索引循环使用蓝、绿、暖橙主题，避免同类内容颜色重复。
+CARD_THEMES = ("blue", "green", "amber")
 
 
 def escape_html(text):
@@ -307,15 +296,13 @@ def escape_html(text):
             .replace('"', "&quot;"))
 
 
-def build_card_block(fields, is_last):
+def build_card_block(fields, index):
     """构建单个彩色内容卡片 HTML。"""
     name = escape_html(extract_text(fields.get(FIELD_NAME, "")))
-    intro_raw = extract_text(fields.get(FIELD_INTRO, ""))
-    intro = escape_html(intro_raw)
+    intro = escape_html(extract_text(fields.get(FIELD_INTRO, "")))
     link = escape_html(extract_link_url(fields.get(FIELD_LINK)))
     category = extract_category(fields.get(FIELD_CATEGORY, ""))
-    theme = CATEGORY_THEMES.get(category, "blue")
-    read_minutes = max(1, min(9, round(max(1, _weighted_text_len(intro_raw)) / 80)))
+    theme = CARD_THEMES[index % len(CARD_THEMES)]
 
     tag_html = ""
     if category:
@@ -329,7 +316,6 @@ def build_card_block(fields, is_last):
         '              </div>\n'
         '              <p class="item-desc">' + intro + '</p>\n'
         '              <div class="item-footer">\n'
-        '                <span class="read-time">约 ' + str(read_minutes) + ' 分钟</span>\n'
         '                <a href="' + link + '" target="_blank" rel="noopener noreferrer" class="btn">\n'
         '                  <span>查看详情</span><span aria-hidden="true">›</span>\n'
         '                </a>\n'
@@ -480,8 +466,7 @@ def generate_html(records, today_str):
     # 生成卡片内容块
     cards_html = ""
     for i, fields in enumerate(records):
-        is_last = (i == len(records) - 1)
-        cards_html += build_card_block(fields, is_last)
+        cards_html += build_card_block(fields, i)
 
     if not cards_html:
         cards_html = (
@@ -645,9 +630,8 @@ def generate_html(records, today_str):
         .item-footer {
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            justify-content: flex-end;
         }
-        .read-time { font-size: 11px; color: #7A8797; }
         .btn {
             display: inline-flex;
             align-items: center;
