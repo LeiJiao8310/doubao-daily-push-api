@@ -27,7 +27,7 @@ import requests
 DEFAULT_MIDDLE_API_URL = "https://doubao-daily-push-api.vercel.app"
 DEFAULT_MIDDLE_API_KEY = "doubao_daily_push"
 
-# 配置优先从 AIME Skill Variables 注入的环境变量读取；其次读取 Skill 包内默认配置。
+# 配置优先从环境变量读取；其次读取 Skill 包内默认配置。
 # 旧版曾使用 ~/.doubao_daily_push/config.json，仅保留只读兼容，不再写入本地文件。
 SKILL_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_FILE = SKILL_DIR / "assets" / "default_config.json"
@@ -47,7 +47,7 @@ def run_lark_cli(args):
     """执行 lark-cli 命令并返回 JSON 结果，兼容 Windows 上的 lark-cli.exe。"""
     executable = shutil.which("lark-cli") or shutil.which("lark-cli.exe")
     if not executable:
-        msg = "未找到 lark-cli，请确认 AIME 运行环境已注入 lark-cli 并在 PATH 中"
+        msg = "未找到 lark-cli，请确认当前运行环境已安装 lark-cli 并在 PATH 中"
         print("❌ " + msg, file=sys.stderr)
         return {"ok": False, "error": msg}
 
@@ -115,8 +115,8 @@ def ensure_config():
     """确保 wiki_token / table_id 已配置。
 
     配置优先级：
-    1. AIME Skill Variables / 环境变量：DOUBAO_BITABLE_URL
-    2. AIME Skill Variables / 环境变量：DOUBAO_WIKI_TOKEN / DOUBAO_TABLE_ID
+    1. 环境变量：DOUBAO_BITABLE_URL
+    2. 环境变量：DOUBAO_WIKI_TOKEN / DOUBAO_TABLE_ID
     3. Skill 包内默认配置 assets/default_config.json
     4. 旧版本地配置文件（只读兼容，不再写入）
 
@@ -725,7 +725,7 @@ def main():
     html_content = generate_html(matched, today_str)
 
     # 6. 写入文件
-    output_dir = os.environ.get("AIME_WORKSPACE_PATH", os.getcwd())
+    output_dir = os.environ.get("WORKSPACE_PATH", os.getcwd())
     output_file = os.path.join(output_dir, "doubao_daily_push.html")
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(html_content)

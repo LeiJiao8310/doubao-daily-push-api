@@ -20,19 +20,9 @@ author: jiaolei.casper
 cd user_skills/doubao-daily-push && python3 scripts/configure_bitable.py "<多维表格链接>"
 ```
 
-脚本会解析链接中的 `wiki_token` 和 `table_id`，同时完成三件事：
-
-1. 调用 `aime skill set-vars` 写入 Skill Variables
-2. 写入 Skill 包内 [assets/default_config.json](assets/default_config.json)，作为客户安装后的默认数据源
-3. 默认生成客户版 ZIP 到 workspace 下的 `doubao_daily_push_customer_packages/` 目录，方便 CSM 直接发给客户
+脚本会解析链接中的 `wiki_token` 和 `table_id`，写入 Skill 包内 [assets/default_config.json](assets/default_config.json)，并默认生成客户版 ZIP 到 workspace 下的 `doubao_daily_push_customer_packages/` 目录，方便 CSM 直接发给客户。
 
 客户版 ZIP 会排除 `scripts/configure_bitable.py`、`.git/`、`.gitignore`、`dist/` 等 CSM 专属内容。若只想配置不打包，可追加 `--no-pack`。
-
-CSM 完整版 Skill 修改后仍需重新上传/更新：
-
-```bash
-aime skill upload <doubao-daily-push Skill 目录绝对路径>
-```
 
 ### 客户侧：安装后直接使用
 
@@ -85,7 +75,7 @@ cd user_skills/doubao-daily-push && python3 scripts/generate_daily_push.py
 将生成的 HTML 复制到 PC 可访问的挂载共享目录：
 
 ```bash
-cp doubao_daily_push.html /mnt/propagation/sources/tmp-aime-agent-shared-dir-*/*/doubao_daily_push.html
+cp doubao_daily_push.html /path/to/shared-directory/doubao_daily_push.html
 ```
 
 > 注意：共享目录路径需根据当前会话的实际挂载路径替换通配符。
@@ -95,7 +85,7 @@ cp doubao_daily_push.html /mnt/propagation/sources/tmp-aime-agent-shared-dir-*/*
 使用 `bash` 工具 + `run_device="local"` 在客户本地打开 HTML：
 
 ```bash
-open /private/tmp/aime-agent-shared-dir/<session-id>/doubao_daily_push.html
+open /path/to/shared-directory/doubao_daily_push.html
 ```
 
 弹窗打开策略（优先级从高到低）：
@@ -131,7 +121,7 @@ open /private/tmp/aime-agent-shared-dir/<session-id>/doubao_daily_push.html
 
 ## 注意事项
 
-- 配置数据源和生成 HTML 都依赖 AIME / lark-cli 权限，执行脚本时必须设置 `include_secrets=true`
+- 配置数据源和生成 HTML 都依赖 lark-cli 权限，执行脚本时必须设置 `include_secrets=true`
 - CSM 分发给客户前，应使用 `configure_bitable.py` 生成客户版 ZIP，优先发送该 ZIP，而不是发送 CSM 完整版目录
 - 客户版 ZIP 内已包含 `assets/default_config.json`，客户运行时不需要输入多维表格链接
 - Vercel 中间 API 端点已内置（`https://doubao-daily-push-api.vercel.app`，`X-API-Key: doubao_daily_push`），普通用户无需配置
