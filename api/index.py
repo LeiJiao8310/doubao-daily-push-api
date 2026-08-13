@@ -17,6 +17,12 @@ DATE_FIELD = "推送排期"
 TENANT_KEY_FIELD = "目标推送客户Tenant_Key"
 DEFAULT_PAGE_SIZE = 100
 
+REGISTRY_BASE_TOKEN = os.getenv("REGISTRY_BASE_TOKEN", "FRh9bKHGCah9HlsczKTc1gCPn4d")
+REGISTRY_TABLE_ID = os.getenv("REGISTRY_TABLE_ID", "tblg8QBggPlVm0kV")
+REGISTRY_WIKI_FIELD = "wiki_token"
+REGISTRY_LAST_PUSH_FIELD = "最近推送时间"
+REGISTRY_PUSH_COUNT_FIELD = "累计推送次数"
+
 _token_cache: Dict[str, Any] = {"token": None, "expire_at": 0}
 _base_token_cache: Dict[str, Any] = {}
 
@@ -63,6 +69,16 @@ def lark_post(path: str, body: Dict[str, Any], token: Optional[str] = None) -> D
 def lark_get(path: str, token: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     headers = {"Authorization": f"Bearer {token}"}
     resp = requests.get(f"{LARK_OPEN_API}{path}", headers=headers, params=params or {}, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    if data.get("code", 0) != 0:
+        raise RuntimeError(f"Lark API error path={path}, code={data.get('code')}, msg={data.get('msg')}")
+    return data
+
+
+def lark_put(path: str, body: Dict[str, Any], token: str) -> Dict[str, Any]:
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=utf-8"}
+    resp = requests.put(f"{LARK_OPEN_API}{path}", json=body, headers=headers, timeout=15)
     resp.raise_for_status()
     data = resp.json()
     if data.get("code", 0) != 0:
@@ -178,9 +194,86 @@ def filter_records(records: List[Dict[str, Any]], date: str, tenant_key: Optiona
     return result
 
 
+def timestamp_ms(value: Any) -> int:
+    if isinstance(value, (int, float)):
+        return int(value if value > 10_000_000_000 else value * 1000)
+    text = str(value or "").strip()
+    if not text:
+        return int(time.time() * 1000)
+    try:
+        normalized = text.replace("Z", "+00:00")
+        return int(datetime.fromisoformat(normalized).timestamp() * 1000)
+    except ValueError:
+        return int(float(text) * (1 if float(text) > 10_000_000_000 else 1000))
+
+
+def find_registry_record(wiki_token: str) -> Optional[Dict[str, Any]]:
+    for record in list_records(REGISTRY_BASE_TOKEN, REGISTRY_TABLE_ID):
+        if field_text(record.get("fields", {}).get(REGISTRY_WIKI_FIELD)).strip() == wiki_token:
+            return record
+    return None
+
+
+def create_registration(payload: Dict[str, Any]) -> str:
+    token = get_tenant_access_token()
+    fields = {
+        "CSM 姓名": payload["csm_name"],
+        "邮箱": payload["email"],
+        "user_id": payload["user_id"],
+        REGISTRY_WIKI_FIELD: payload["wiki_token"],
+        "注册时间": timestamp_ms(payload.get("timestamp")),
+        REGISTRY_PUSH_COUNT_FIELD: 0,
+    }
+    data = lark_post(
+        f"/bitable/v1/apps/{REGISTRY_BASE_TOKEN}/tables/{REGISTRY_TABLE_ID}/records",
+        {"fields": fields},
+        token,
+    )
+    return data.get("data", {}).get("record", {}).get("record_id", "")
+
+
+def update_registration_push_stats(wiki_token: str) -> bool:
+    record = find_registry_record(wiki_token)
+    if not record:
+        return False
+    record_id = record.get("record_id")
+    current_count = record.get("fields", {}).get(REGISTRY_PUSH_COUNT_FIELD) or 0
+    try:
+        current_count = int(float(current_count))
+    except (TypeError, ValueError):
+        current_count = 0
+    token = get_tenant_access_token()
+    lark_put(
+        f"/bitable/v1/apps/{REGISTRY_BASE_TOKEN}/tables/{REGISTRY_TABLE_ID}/records/{record_id}",
+        {"fields": {
+            REGISTRY_LAST_PUSH_FIELD: int(time.time() * 1000),
+            REGISTRY_PUSH_COUNT_FIELD: current_count + 1,
+        }},
+        token,
+    )
+    return True
+
+
 @app.get("/health")
 def health():
     return jsonify({"ok": True})
+
+
+@app.post("/register")
+def register():
+    auth_error = require_api_key()
+    if auth_error:
+        return auth_error
+    payload = request.get_json(silent=True) or {}
+    required = ["wiki_token", "csm_name", "email", "user_id", "timestamp"]
+    missing = [name for name in required if not str(payload.get(name, "")).strip()]
+    if missing:
+        return jsonify({"error": "missing_fields", "fields": missing}), 400
+    try:
+        record_id = create_registration(payload)
+        return jsonify({"ok": True, "record_id": record_id}), 201
+    except Exception as exc:
+        return jsonify({"error": "internal_error", "message": str(exc)}), 500
 
 
 @app.get("/records")
@@ -197,6 +290,11 @@ def records():
         base_token = get_base_token_from_wiki(wiki_token)
         all_records = list_records(base_token, table_id)
         items = filter_records(all_records, date=date, tenant_key=tenant_key)
+        stats_updated = False
+        try:
+            stats_updated = update_registration_push_stats(wiki_token)
+        except Exception as exc:
+            app.logger.warning("failed to update registry stats for wiki_token=%s: %s", wiki_token, exc)
         return jsonify({
             "date": date,
             "tenant_key": tenant_key,
@@ -204,6 +302,7 @@ def records():
             "table_id": table_id,
             "count": len(items),
             "records": items,
+            "registry_stats_updated": stats_updated,
         })
     except Exception as exc:
         return jsonify({"error": "internal_error", "message": str(exc)}), 500
