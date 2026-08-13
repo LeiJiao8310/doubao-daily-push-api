@@ -1,54 +1,28 @@
-# FaaS 创建参数模板 + doubao-daily-push 中间 API
+# doubao-daily-push 中间 API（Vercel）
 
-## 一、FaaS 创建参数模板
+这是用于 `doubao-daily-push` Skill 的轻量中间 API。服务端只托管飞书 App Secret，并通过调用方传入的 `wiki_token` 和 `table_id` 读取指定多维表格数据。
 
-推荐入口：
+## 目录结构
 
-- DevOps 一键创建 FaaS：https://cloud.bytedance.net/appfactory_v2/createproject/be?mode=FaaS
-- ByteFaaS 控制台：https://cloud.bytedance.net/faas/func_list
+```text
+api/index.py      # Vercel Python Serverless Function 入口
+vercel.json       # Vercel 路由和构建配置
+requirements.txt  # Python 依赖
+```
 
-建议参数：
+## 环境变量
 
-| 参数 | 建议填写 |
-|---|---|
-| 函数名 | `doubao-daily-push-api` |
-| 函数 PSM | 按团队规范填写一个唯一 PSM，例如 `your_team.doubao.daily_push_api` |
-| 部署环境 | 先 `boe`，验证后再 `production` |
-| 部署地区 | 优先选择 CN / 华北 |
-| 服务树 / 服务组 | 选择你所在团队有权限的服务树 |
-| Protocol | `HTTP` |
-| Runtime | Python 3.8+ 或 Native Python，按平台模板可选项选择 |
-| 创建方式 | 长期维护建议 SCM 仓库；快速验证可在线编辑 |
-| 实例规格 | 默认即可 |
-| 请求超时 | 10s～30s |
-| 初始化超时 | 30s～60s |
-| 触发器 | 默认 HTTP；如需自定义域名/TLB，再新增 Consul 触发器 |
-| 审核机制 | BOE 验证可先不开；生产按团队规范开启 |
-
-## 二、环境变量
-
-必须配置：
+服务端只需要配置 3 个环境变量：
 
 ```bash
 LARK_APP_ID=cli_aae68c4f4e789bc9
-LARK_APP_SECRET=<从 KMS / 敏感配置读取，不要写进代码仓库>
+LARK_APP_SECRET=<飞书 App Secret，不要写入代码仓库>
 MIDDLE_API_KEY=<自定义访问密钥，只给 Skill 使用>
-LARK_WIKI_TOKEN=XzprwzxmuiwHBUkYMcIcPZXBn0g
-LARK_TABLE_ID=tblcyon9vA9y1BLx
 ```
 
-可选配置：
+`wiki_token` 和 `table_id` 不在服务端保存，由 Skill 每次请求时传入。
 
-```bash
-DATE_FIELD=date
-TENANT_KEY_FIELD=tenant_key
-DEFAULT_PAGE_SIZE=100
-PORT=8000
-```
-
-如果多维表字段名不是 `date` 和 `tenant_key`，请把 `DATE_FIELD`、`TENANT_KEY_FIELD` 改成真实字段名。
-
-## 三、接口说明
+## 接口
 
 ### 健康检查
 
@@ -59,11 +33,18 @@ GET /health
 ### 获取当日推送数据
 
 ```bash
-GET /records?tenant_key=xxx&date=2026-08-13
+GET /records?wiki_token=xxx&table_id=xxx&tenant_key=xxx&date=2026-08-13
 X-API-Key: <MIDDLE_API_KEY>
 ```
 
-`date` 不传时，默认按中国时区取当天日期。
+`date` 不传时，默认按东八区取当天日期。
+
+服务端固定按以下字段筛选：
+
+```text
+推送排期
+目标推送客户Tenant_Key
+```
 
 返回示例：
 
@@ -71,6 +52,8 @@ X-API-Key: <MIDDLE_API_KEY>
 {
   "date": "2026-08-13",
   "tenant_key": "xxx",
+  "wiki_token": "xxx",
+  "table_id": "xxx",
   "count": 1,
   "records": [
     {
@@ -81,26 +64,18 @@ X-API-Key: <MIDDLE_API_KEY>
 }
 ```
 
-## 四、本地验证
+## 本地验证
 
 ```bash
 pip install -r requirements.txt
+export LARK_APP_ID='cli_aae68c4f4e789bc9'
 export LARK_APP_SECRET='你的 App Secret'
 export MIDDLE_API_KEY='一个自定义 API Key'
-python app.py
+python api/index.py
 ```
 
-然后请求：
+Vercel 环境下不需要本地启动命令，推送到 GitHub 后由 Vercel 自动部署。
 
-```bash
-curl 'http://127.0.0.1:8000/records?date=2026-08-13&tenant_key=xxx' \
-  -H 'X-API-Key: 一个自定义 API Key'
-```
+## App Secret 存放建议
 
-## 五、App Secret 存放建议
-
-不要把 `LARK_APP_SECRET` 写入代码、README、Skill 源码或 Git 仓库。
-
-推荐做法是：生产环境把 App Secret 放到 KMS、Vault 或 FaaS 平台的敏感配置/环境变量中，运行时以环境变量形式注入服务。Skill 侧只保存 `MIDDLE_API_KEY`，通过中间 API 读取业务数据。
-
-更安全的生产做法还包括：定期轮换 App Secret 和 `MIDDLE_API_KEY`，接口只允许白名单路径，日志里不要打印 App Secret、tenant_access_token、完整请求头和敏感业务字段。
+不要把 `LARK_APP_SECRET` 写入代码、README、Skill 源码或 Git 仓库。生产环境只放在 Vercel Environment Variables 中。Skill 侧只保存 `MIDDLE_API_KEY`，以及用户配置的数据源 `wiki_token` 和 `table_id`。

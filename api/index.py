@@ -1,25 +1,24 @@
 import os
 import time
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
-LARK_OPEN_API = os.getenv("LARK_OPEN_API", "https://open.feishu.cn/open-apis")
-APP_ID = os.getenv("LARK_APP_ID", "cli_aae68c4f4e789bc9")
+LARK_OPEN_API = "https://open.feishu.cn/open-apis"
+APP_ID = os.getenv("LARK_APP_ID", "")
 APP_SECRET = os.getenv("LARK_APP_SECRET", "")
 API_KEY = os.getenv("MIDDLE_API_KEY", "")
-WIKI_TOKEN = os.getenv("LARK_WIKI_TOKEN", "XzprwzxmuiwHBUkYMcIcPZXBn0g")
-TABLE_ID = os.getenv("LARK_TABLE_ID", "tblcyon9vA9y1BLx")
-DATE_FIELD = os.getenv("DATE_FIELD", "date")
-TENANT_KEY_FIELD = os.getenv("TENANT_KEY_FIELD", "tenant_key")
-DEFAULT_PAGE_SIZE = int(os.getenv("DEFAULT_PAGE_SIZE", "100"))
+
+DATE_FIELD = "推送排期"
+TENANT_KEY_FIELD = "目标推送客户Tenant_Key"
+DEFAULT_PAGE_SIZE = 100
 
 _token_cache: Dict[str, Any] = {"token": None, "expire_at": 0}
-_base_token_cache: Dict[str, Any] = {"base_token": None, "expire_at": 0}
+_base_token_cache: Dict[str, Any] = {}
 
 
 def now_ts() -> int:
@@ -37,6 +36,16 @@ def require_api_key() -> Optional[Any]:
     if given != API_KEY:
         return jsonify({"error": "unauthorized"}), 401
     return None
+
+
+def require_query_params() -> Tuple[Optional[str], Optional[str], Optional[Any]]:
+    wiki_token = (request.args.get("wiki_token") or "").strip()
+    table_id = (request.args.get("table_id") or "").strip()
+    if not wiki_token:
+        return None, None, (jsonify({"error": "missing_wiki_token"}), 400)
+    if not table_id:
+        return None, None, (jsonify({"error": "missing_table_id"}), 400)
+    return wiki_token, table_id, None
 
 
 def lark_post(path: str, body: Dict[str, Any], token: Optional[str] = None) -> Dict[str, Any]:
@@ -64,6 +73,8 @@ def lark_get(path: str, token: str, params: Optional[Dict[str, Any]] = None) -> 
 def get_tenant_access_token() -> str:
     if _token_cache["token"] and _token_cache["expire_at"] > now_ts() + 60:
         return _token_cache["token"]
+    if not APP_ID:
+        raise RuntimeError("LARK_APP_ID is not configured. Set it in Vercel Environment Variables.")
     if not APP_SECRET:
         raise RuntimeError("LARK_APP_SECRET is not configured. Set it in Vercel Environment Variables, not in code.")
     data = lark_post("/auth/v3/tenant_access_token/internal", {
@@ -76,11 +87,12 @@ def get_tenant_access_token() -> str:
     return token
 
 
-def get_base_token_from_wiki() -> str:
-    if _base_token_cache["base_token"] and _base_token_cache["expire_at"] > now_ts() + 300:
-        return _base_token_cache["base_token"]
+def get_base_token_from_wiki(wiki_token: str) -> str:
+    cached = _base_token_cache.get(wiki_token)
+    if cached and cached["expire_at"] > now_ts() + 300:
+        return cached["base_token"]
     token = get_tenant_access_token()
-    data = lark_get("/wiki/v2/spaces/get_node", token, params={"token": WIKI_TOKEN})
+    data = lark_get("/wiki/v2/spaces/get_node", token, params={"token": wiki_token})
     node = data.get("data", {}).get("node", {})
     obj_token = node.get("obj_token")
     obj_type = node.get("obj_type")
@@ -88,7 +100,7 @@ def get_base_token_from_wiki() -> str:
         raise RuntimeError("wiki node obj_token not found")
     if obj_type and obj_type != "bitable":
         raise RuntimeError(f"wiki node is not bitable, obj_type={obj_type}")
-    _base_token_cache.update({"base_token": obj_token, "expire_at": now_ts() + 3600})
+    _base_token_cache[wiki_token] = {"base_token": obj_token, "expire_at": now_ts() + 3600}
     return obj_token
 
 
@@ -123,7 +135,7 @@ def field_text(value: Any) -> str:
     return str(value)
 
 
-def list_records(base_token: str) -> List[Dict[str, Any]]:
+def list_records(base_token: str, table_id: str) -> List[Dict[str, Any]]:
     token = get_tenant_access_token()
     records: List[Dict[str, Any]] = []
     page_token = None
@@ -131,7 +143,7 @@ def list_records(base_token: str) -> List[Dict[str, Any]]:
         params = {"page_size": DEFAULT_PAGE_SIZE}
         if page_token:
             params["page_token"] = page_token
-        data = lark_get(f"/bitable/v1/apps/{base_token}/tables/{TABLE_ID}/records", token, params=params)
+        data = lark_get(f"/bitable/v1/apps/{base_token}/tables/{table_id}/records", token, params=params)
         payload = data.get("data", {})
         records.extend(payload.get("items", []))
         if not payload.get("has_more"):
@@ -142,15 +154,22 @@ def list_records(base_token: str) -> List[Dict[str, Any]]:
     return records
 
 
+def tenant_matches(field_value: Any, tenant_key: str) -> bool:
+    if not tenant_key:
+        return True
+    tenant_str = field_text(field_value)
+    tenant_keys = [item.strip() for item in tenant_str.split(",") if item.strip()]
+    return tenant_key in tenant_keys
+
+
 def filter_records(records: List[Dict[str, Any]], date: str, tenant_key: Optional[str]) -> List[Dict[str, Any]]:
     result = []
     for record in records:
         fields = record.get("fields", {})
         record_date = normalize_date(fields.get(DATE_FIELD))
-        record_tenant = field_text(fields.get(TENANT_KEY_FIELD))
         if record_date != date:
             continue
-        if tenant_key and record_tenant != tenant_key:
+        if tenant_key and not tenant_matches(fields.get(TENANT_KEY_FIELD), tenant_key):
             continue
         result.append({
             "record_id": record.get("record_id"),
@@ -169,15 +188,20 @@ def records():
     auth_error = require_api_key()
     if auth_error:
         return auth_error
+    wiki_token, table_id, param_error = require_query_params()
+    if param_error:
+        return param_error
     date = request.args.get("date") or today_cst()
     tenant_key = request.args.get("tenant_key")
     try:
-        base_token = get_base_token_from_wiki()
-        all_records = list_records(base_token)
+        base_token = get_base_token_from_wiki(wiki_token)
+        all_records = list_records(base_token, table_id)
         items = filter_records(all_records, date=date, tenant_key=tenant_key)
         return jsonify({
             "date": date,
             "tenant_key": tenant_key,
+            "wiki_token": wiki_token,
+            "table_id": table_id,
             "count": len(items),
             "records": items,
         })
