@@ -1,6 +1,9 @@
 ---
 name: doubao-daily-push
 description: 豆包玩儿法推荐每日推送。从多维表格素材库获取当日推送内容，按租户匹配筛选后生成飞书消息卡片风格的HTML，在客户本地电脑以浏览器弹窗打开。适用于用户说"我的表格链接是xxx"、"启动每日推送"、"设置定时推送"、"每天X点推送玩儿法"、"开始每日弹窗推送"、"停止推送"等配置和定时推送管理场景。
+dependencies:
+  python:
+    - requests>=2.31.0
 author: jiaolei.casper
 ---
 
