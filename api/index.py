@@ -14,6 +14,17 @@ from flask import Flask, jsonify, request, send_file
 
 app = Flask(__name__)
 
+
+@app.after_request
+def add_cors_headers(response):
+    """Allow browser clients such as Feishu Miaoda to call every API."""
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-API-Key"
+    response.headers["Access-Control-Expose-Headers"] = "Content-Disposition"
+    response.headers["Access-Control-Max-Age"] = "86400"
+    return response
+
 LARK_OPEN_API = "https://open.feishu.cn/open-apis"
 APP_ID = os.getenv("LARK_APP_ID", "")
 APP_SECRET = os.getenv("LARK_APP_SECRET", "")
